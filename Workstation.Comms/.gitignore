@@ -1,0 +1,42 @@
+# .NET Build outputs
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.user
+*.suo
+*.cache
+*.log
+
+# NuGet
+packages/
+*.nupkg
+
+# Rider
+.idea/
+*.sln.iml
+
+# Visual Studio
+.vs/
+*.csproj.user
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+
+# Test results
+TestResults/
+*.trx
+
+# Temporary files
+*.tmp
+*.temp
+~$*
