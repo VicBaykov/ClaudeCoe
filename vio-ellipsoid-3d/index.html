@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Эллипсоид неопределённости VIO в коридоре</title>
+<style>
+  :root {
+    --panel: rgba(22, 27, 36, 0.92);
+    --panel2: #1d2430;
+    --text: #d7dde8;
+    --muted: #7a8499;
+    --accent: #ffd24a;
+    --diag: #4ec9b0;
+    --offdiag: #e06c9f;
+    --danger: #ff6b6b;
+    font-size: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: #0e1117;
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  canvas { display: block; }
+
+  /* ---------- HUD-панель справа ---------- */
+  #hud {
+    position: fixed; top: 12px; right: 12px; bottom: 12px;
+    width: 320px;
+    background: var(--panel);
+    border: 1px solid #232b3a;
+    border-radius: 10px;
+    padding: 14px;
+    overflow-y: auto;
+    backdrop-filter: blur(4px);
+  }
+  h1 { font-size: 1.0rem; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 0.74rem; line-height: 1.4; margin-bottom: 10px; }
+  h2 {
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted);
+    margin: 14px 0 6px;
+  }
+  /* пресеты */
+  #presets { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  #presets button {
+    padding: 7px 4px; border-radius: 6px; border: 1px solid #2c3648;
+    background: var(--panel2); color: var(--text); cursor: pointer; font-size: 0.78rem;
+  }
+  #presets button:hover { border-color: var(--accent); }
+  #presets button.active { border-color: var(--accent); color: var(--accent); }
+  /* маршрут */
+  #routeT { width: 100%; accent-color: var(--accent); margin-bottom: 6px; }
+  #runBtn {
+    width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #2c3648;
+    background: var(--panel2); color: var(--accent); cursor: pointer; font-size: 0.85rem;
+  }
+  #runBtn:hover { border-color: var(--accent); }
+  /* матрица Λ */
+  #matrix {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;
+    font-family: "Cascadia Code", Consolas, monospace;
+  }
+  .mcell {
+    background: var(--panel2); border-radius: 5px;
+    padding: 7px 4px; text-align: center; font-size: 0.8rem;
+  }
+  .mcell.d { color: var(--diag); box-shadow: inset 0 0 0 1px rgba(78,201,176,0.35); }
+  .mcell.o { color: var(--offdiag); box-shadow: inset 0 0 0 1px rgba(224,108,159,0.30); }
+  /* спектр */
+  #eigRow { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+  .chip {
+    background: var(--panel2); border-radius: 5px; padding: 6px 4px; text-align: center;
+  }
+  .chip .lbl { font-size: 0.65rem; color: var(--muted); }
+  .chip .val { font-size: 0.82rem; font-family: Consolas, monospace; }
+  .bigval {
+    background: var(--panel2); border-radius: 6px; padding: 8px 10px;
+    margin-top: 6px; display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .bigval .lbl { font-size: 0.75rem; color: var(--muted); }
+  .bigval .val { font-size: 1.25rem; font-family: Consolas, monospace; }
+  #qVal { color: var(--accent); }
+  /* индикатор тьмы */
+  #dark {
+    margin-top: 6px; padding: 8px 10px; border-radius: 6px;
+    font-size: 0.76rem; line-height: 1.35;
+    background: var(--panel2); color: var(--muted);
+  }
+  #dark.found {
+    background: rgba(255,107,107,0.12); color: var(--danger);
+    box-shadow: inset 0 0 0 1px rgba(255,107,107,0.4);
+  }
+  /* проба */
+  .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .row label { font-size: 0.72rem; color: var(--muted); width: 64px; }
+  .row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .row .num { width: 44px; text-align: right; font-size: 0.76rem; font-family: Consolas, monospace; }
+  .hint { color: var(--muted); font-size: 0.7rem; line-height: 1.45; margin-top: 12px; }
+  .hint .sw { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 3px; }
+
+  /* ---------- график λ_min внизу слева ---------- */
+  #graphWrap {
+    position: fixed; left: 12px; bottom: 12px;
+    width: min(46vw, 560px); height: 130px;
+    background: var(--panel);
+    border: 1px solid #232b3a; border-radius: 10px;
+    padding: 8px 10px 10px;
+  }
+  #graphWrap .glabel { font-size: 0.7rem; color: var(--muted); margin-bottom: 4px; }
+  #graph { width: 100%; height: calc(100% - 18px); display: block; }
+
+  /* подсказка управления */
+  #help {
+    position: fixed; left: 12px; top: 12px;
+    font-size: 0.72rem; color: var(--muted);
+    background: var(--panel); border: 1px solid #232b3a;
+    border-radius: 8px; padding: 6px 10px;
+  }
+</style>
+</head>
+<body>
+
+<div id="help">ЛКМ — облёт · колесо — масштаб · ПКМ — панорама</div>
+
+<div id="hud">
+  <h1>Эллипсоид неопределённости VIO</h1>
+  <div class="sub">
+    Видимая фича даёт Λ += w·(I − r rᵀ) — информацию поперёк луча зрения.
+    Фича однородной стены — только w·n nᵀ, вдоль нормали стены.
+    Эллипсоид — ковариация P = Λ⁻¹. Модель и упрощения — в README.
+  </div>
+
+  <h2>Сцена</h2>
+  <div id="presets">
+    <button data-p="room">Комната</button>
+    <button data-p="corridor">Коридор</button>
+    <button data-p="stairs">Лестница</button>
+  </div>
+
+  <h2>Маршрут</h2>
+  <input type="range" id="routeT" min="0" max="1000" value="0">
+  <button id="runBtn">▶ Пройти маршрут</button>
+
+  <h2>Матрица Λ</h2>
+  <div id="matrix">
+    <div class="mcell d" id="m0">0</div><div class="mcell o" id="m1">0</div><div class="mcell o" id="m2">0</div>
+    <div class="mcell o" id="m3">0</div><div class="mcell d" id="m4">0</div><div class="mcell o" id="m5">0</div>
+    <div class="mcell o" id="m6">0</div><div class="mcell o" id="m7">0</div><div class="mcell d" id="m8">0</div>
+  </div>
+
+  <h2>Спектр Λ</h2>
+  <div id="eigRow">
+    <div class="chip"><div class="lbl">λ1</div><div class="val" id="l1">0</div></div>
+    <div class="chip"><div class="lbl">λ2</div><div class="val" id="l2">0</div></div>
+    <div class="chip"><div class="lbl">λ3</div><div class="val" id="l3">0</div></div>
+  </div>
+  <div class="bigval"><span class="lbl">λ_min</span><span class="val" id="lminVal">0</span></div>
+  <div id="dark"></div>
+
+  <h2>Пробное направление d</h2>
+  <div class="row"><label>азимут</label><input type="range" id="az" min="0" max="360" step="1" value="90"><span class="num" id="azV">90°</span></div>
+  <div class="row"><label>элевация</label><input type="range" id="el" min="-85" max="85" step="1" value="0"><span class="num" id="elV">0°</span></div>
+  <div class="bigval"><span class="lbl">dᵀΛd</span><span class="val" id="qVal">0</span></div>
+
+  <div class="hint">
+    <span class="sw" style="background:#ffe28a"></span>видимая bearing-фича ·
+    <span class="sw" style="background:#7fe0d0"></span>видимая фича однородной стены ·
+    <span class="sw" style="background:#39404e"></span>вне поля зрения.<br>
+    В «Коридоре» нажмите «Пройти маршрут»: λ_min на графике проседает к нулю —
+    вдоль коридора нет информации, эллипсоид вытягивается красной осью вперёд.
+  </div>
+</div>
+
+<div id="graphWrap">
+  <div class="glabel">λ_min вдоль маршрута</div>
+  <canvas id="graph"></canvas>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
