@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Информационная матрица и геометрия датчиков</title>
+<style>
+  :root {
+    --bg: #0e1117;
+    --panel: #161b24;
+    --panel2: #1d2430;
+    --text: #d7dde8;
+    --muted: #7a8499;
+    --accent: #ffd24a;       /* проба d */
+    --diag: #4ec9b0;         /* диагональ Λ */
+    --offdiag: #e06c9f;      /* недиагональ Λ */
+    --danger: #ff6b6b;
+    --ok: #5dd39e;
+    font-size: 15px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex;
+    overflow: hidden;
+  }
+  #canvasWrap { flex: 1; position: relative; min-width: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: default; }
+  #panel {
+    width: 360px;
+    flex: 0 0 360px;
+    background: var(--panel);
+    border-left: 1px solid #232b3a;
+    padding: 16px;
+    overflow-y: auto;
+  }
+  h1 { font-size: 1.05rem; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 0.78rem; margin-bottom: 14px; line-height: 1.35; }
+  h2 {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted);
+    margin: 18px 0 8px;
+  }
+  /* матрица Λ */
+  #matrix {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    font-family: "Cascadia Code", "Consolas", monospace;
+  }
+  .mcell {
+    background: var(--panel2);
+    border-radius: 6px;
+    padding: 10px 8px;
+    text-align: center;
+    font-size: 1.0rem;
+    transition: background 0.15s;
+  }
+  .mcell.d { color: var(--diag); box-shadow: inset 0 0 0 1px rgba(78,201,176,0.35); }
+  .mcell.o { color: var(--offdiag); box-shadow: inset 0 0 0 1px rgba(224,108,159,0.35); }
+  /* большие числа */
+  #bigvals { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .bigval {
+    background: var(--panel2); border-radius: 6px; padding: 8px 6px; text-align: center;
+  }
+  .bigval .lbl { font-size: 0.68rem; color: var(--muted); }
+  .bigval .val { font-size: 1.05rem; font-family: "Cascadia Code", "Consolas", monospace; margin-top: 2px; }
+  #vLmin .val { color: var(--offdiag); }
+  #vLmax .val { color: var(--diag); }
+  #vQ .val { color: var(--accent); }
+  /* индикатор тьмы */
+  #dark {
+    margin-top: 8px; padding: 9px 12px; border-radius: 6px;
+    font-size: 0.82rem; line-height: 1.3;
+    background: var(--panel2); color: var(--muted);
+  }
+  #dark.found { background: rgba(255,107,107,0.12); color: var(--danger); box-shadow: inset 0 0 0 1px rgba(255,107,107,0.4); }
+  /* датчики */
+  .sensor {
+    background: var(--panel2); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+    border-left: 4px solid;
+  }
+  .sensor .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .sensor .name { font-size: 0.85rem; font-weight: 600; }
+  .sensor button {
+    background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem;
+  }
+  .sensor button:hover { color: var(--danger); }
+  .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .row label { font-size: 0.75rem; color: var(--muted); width: 18px; }
+  .row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .row .num {
+    width: 58px; text-align: right; font-size: 0.78rem;
+    font-family: "Cascadia Code", "Consolas", monospace;
+  }
+  #addBtn {
+    width: 100%; padding: 8px; border-radius: 6px; border: 1px dashed #3a465c;
+    background: none; color: var(--muted); cursor: pointer; font-size: 0.85rem;
+  }
+  #addBtn:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
+  #addBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+  /* пресеты */
+  #presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #presets button {
+    padding: 8px 6px; border-radius: 6px; border: 1px solid #2c3648;
+    background: var(--panel2); color: var(--text); cursor: pointer; font-size: 0.8rem;
+  }
+  #presets button:hover { border-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 0.72rem; margin-top: 14px; line-height: 1.45; }
+</style>
+</head>
+<body>
+
+<div id="canvasWrap"><canvas id="cv"></canvas></div>
+
+<div id="panel">
+  <h1>Информационная матрица Λ</h1>
+  <div class="sub">
+    Каждый скалярный датчик с направлением θ и шумом R добавляет в матрицу
+    вклад Hᵀ(1/R)H, где H&nbsp;=&nbsp;[cos&nbsp;θ, sin&nbsp;θ].
+    Эллипс — неопределённость P&nbsp;=&nbsp;Λ⁻¹.
+    Тяните датчики и стрелку-пробу мышью прямо на холсте.
+  </div>
+
+  <h2>Матрица Λ</h2>
+  <div id="matrix">
+    <div class="mcell d" id="m00">0</div>
+    <div class="mcell o" id="m01">0</div>
+    <div class="mcell o" id="m10">0</div>
+    <div class="mcell d" id="m11">0</div>
+  </div>
+
+  <h2>Спектр и проба</h2>
+  <div id="bigvals">
+    <div class="bigval" id="vLmin"><div class="lbl">λ_min</div><div class="val">0</div></div>
+    <div class="bigval" id="vLmax"><div class="lbl">λ_max</div><div class="val">0</div></div>
+    <div class="bigval" id="vQ"><div class="lbl">dᵀΛd</div><div class="val">0</div></div>
+  </div>
+  <div id="dark"></div>
+
+  <h2>Пресеты</h2>
+  <div id="presets">
+    <button data-p="north">Датчик на север</button>
+    <button data-p="ortho">Два ортогональных</button>
+    <button data-p="diag">Диагональный</button>
+    <button data-p="corridor">Коридор</button>
+  </div>
+
+  <h2>Датчики (0–5)</h2>
+  <div id="sensorList"></div>
+  <button id="addBtn">+ добавить датчик</button>
+
+  <div class="hint">
+    Подсказка: в пресете «Коридор» диагональ Λ выглядит прилично,
+    но λ_min почти ноль — вырожденность прячется в недиагональных элементах.
+    Поверните пробу d поперёк датчиков и посмотрите на dᵀΛd.
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ============================== МОДЕЛЬ ==============================
+
+const EPS = 1e-9;          // порог «тьмы»: λ < EPS считаем нулём
+const MAX_SENSORS = 5;
+
+// палитра датчиков
+const SENSOR_COLORS = ["#56b6f5", "#5dd39e", "#c792ea", "#f78c6c", "#f5e356"];
+
+// состояние: датчики {theta — радианы в [0,π), R — дисперсия шума}
+let sensors = [];
+// пробное направление d (радианы, свободный угол)
+let probeTheta = 30 * Math.PI / 180;
+
+// --- Информационная матрица ---
+// Λ = Σ_i Hᵢᵀ (1/Rᵢ) Hᵢ,  Hᵢ = [cos θᵢ, sin θᵢ]
+// Вклад одного датчика: (1/R) * [[c², c·s], [c·s, s²]]
+function infoMatrix() {
+  let a = 0, b = 0, d = 0;   // Λ = [[a, b], [b, d]] — симметричная
+  for (const s of sensors) {
+    const c = Math.cos(s.theta), sn = Math.sin(s.theta), w = 1 / s.R;
+    a += w * c * c;
+    b += w * c * sn;
+    d += w * sn * sn;
+  }
+  return { a, b, d };
+}
+
+// --- Собственное разложение симметричной 2×2 матрицы, аналитически ---
+// tr = a + d, det = a·d − b²
+// λ_{1,2} = tr/2 ± sqrt( (tr/2)² − det )   (дискриминант = ((a−d)/2)² + b² ≥ 0)
+// Собственный вектор для λ: (b, λ−a), либо (λ−d, b); если b≈0 — оси координат.
+function eig2x2(M) {
+  const { a, b, d } = M;
+  const half = (a + d) / 2;
+  const disc = Math.sqrt(Math.max(0, ((a - d) / 2) ** 2 + b * b));
+  const l1 = half + disc;  // λ_max
+  const l2 = half - disc;  // λ_min
+  let v1, v2;
+  if (Math.abs(b) > 1e-12) {
+    v1 = normalize([b, l1 - a]);
+    v2 = normalize([b, l2 - a]);
+  } else {
+    // матрица уже диагональная: собственные оси — координатные
+    if (a >= d) { v1 = [1, 0]; v2 = [0, 1]; }
+    else        { v1 = [0, 1]; v2 = [1, 0]; }
+  }
+  return { l1, l2, v1, v2 };
+}
+
+function normalize(v) {
+  const n = Math.hypot(v[0], v[1]);
+  return n > 0 ? [v[0] / n, v[1] / n] : [1, 0];
+}
+
+// --- Квадратичная форма пробы ---
+// dᵀΛd = a·cos²φ + 2b·cosφ·sinφ + d·sin²φ  — информация вдоль направления d
+function quadForm(M, phi) {
+  const c = Math.cos(phi), s = Math.sin(phi);
+  return M.a * c * c + 2 * M.b * c * s + M.d * s * s;
+}
+
+// нормализация угла датчика в [0, π): направление измерения — это прямая
+function normSensorAngle(t) {
+  t = t % Math.PI;
+  if (t < 0) t += Math.PI;
+  return t;
+}
+
+// ============================== ПРЕСЕТЫ ==============================
+
+const PRESETS = {
+  north:    [{ theta: 90, R: 1 }],
+  ortho:    [{ theta: 90, R: 1 }, { theta: 0, R: 1 }],
+  diag:     [{ theta: 45, R: 1 }],
+  corridor: [{ theta: 88, R: 1 }, { theta: 92, R: 1 }],
+};
+
+function applyPreset(name) {
+  sensors = PRESETS[name].map(p => ({ theta: p.theta * Math.PI / 180, R: p.R }));
+  rebuildSensorList();
+}
+
+// ============================== ПАНЕЛЬ ==============================
+
+const sensorList = document.getElementById("sensorList");
+const addBtn = document.getElementById("addBtn");
+let sliderRefs = [];  // [{thSlider, thNum, rSlider, rNum}] для live-синхронизации при drag
+
+function rebuildSensorList() {
+  sensorList.innerHTML = "";
+  sliderRefs = [];
+  sensors.forEach((s, i) => {
+    const div = document.createElement("div");
+    div.className = "sensor";
+    div.style.borderLeftColor = SENSOR_COLORS[i];
+    div.innerHTML = `
+      <div class="head">
+        <span class="name" style="color:${SENSOR_COLORS[i]}">Датчик ${i + 1}</span>
+        <button title="удалить">✕</button>
+      </div>
+      <div class="row"><label>θ</label><input type="range" min="0" max="180" step="1" class="th"><span class="num thn"></span></div>
+      <div class="row"><label>R</label><input type="range" min="0.1" max="10" step="0.1" class="r"><span class="num rn"></span></div>
+    `;
+    const thS = div.querySelector(".th"), thN = div.querySelector(".thn");
+    const rS = div.querySelector(".r"), rN = div.querySelector(".rn");
+    thS.value = Math.round(s.theta * 180 / Math.PI);
+    rS.value = s.R;
+    thN.textContent = thS.value + "°";
+    rN.textContent = (+rS.value).toFixed(1);
+    thS.addEventListener("input", () => {
+      sensors[i].theta = (+thS.value) * Math.PI / 180;
+      thN.textContent = thS.value + "°";
+    });
+    rS.addEventListener("input", () => {
+      sensors[i].R = +rS.value;
+      rN.textContent = (+rS.value).toFixed(1);
+    });
+    div.querySelector("button").addEventListener("click", () => {
+      sensors.splice(i, 1);
+      rebuildSensorList();
+    });
+    sensorList.appendChild(div);
+    sliderRefs.push({ thS, thN, rS, rN });
+  });
+  addBtn.disabled = sensors.length >= MAX_SENSORS;
+}
+
+// синхронизация слайдеров при вращении датчика мышью
+function syncSliders(i) {
+  const r = sliderRefs[i];
+  if (!r) return;
+  const deg = Math.round(sensors[i].theta * 180 / Math.PI);
+  r.thS.value = deg;
+  r.thN.textContent = deg + "°";
+}
+
+addBtn.addEventListener("click", () => {
+  if (sensors.length < MAX_SENSORS) {
+    // новый датчик под случайным углом, чтобы было видно
+    sensors.push({ theta: normSensorAngle(Math.random() * Math.PI), R: 1 });
+    rebuildSensorList();
+  }
+});
+
+document.getElementById("presets").addEventListener("click", e => {
+  const p = e.target.dataset.p;
+  if (p) applyPreset(p);
+});
+
+// форматирование чисел: маленькие — экспонентой
+function fmt(x) {
+  if (!isFinite(x)) return "∞";
+  const ax = Math.abs(x);
+  if (ax !== 0 && ax < 1e-3) return x.toExponential(1);
+  return x.toFixed(3);
+}
+
+const m00 = document.getElementById("m00"), m01 = document.getElementById("m01"),
+      m10 = document.getElementById("m10"), m11 = document.getElementById("m11");
+const vLmin = document.querySelector("#vLmin .val"),
+      vLmax = document.querySelector("#vLmax .val"),
+      vQ    = document.querySelector("#vQ .val");
+const darkBox = document.getElementById("dark");
+
+function updatePanel(M, E, q) {
+  m00.textContent = fmt(M.a);
+  m01.textContent = fmt(M.b);
+  m10.textContent = fmt(M.b);
+  m11.textContent = fmt(M.d);
+  vLmin.textContent = fmt(E.l2);
+  vLmax.textContent = fmt(E.l1);
+  vQ.textContent = fmt(q);
+
+  if (E.l1 < EPS) {
+    darkBox.className = "found";
+    darkBox.innerHTML = "⚠ Тьма повсюду: датчиков нет, Λ = 0, не наблюдаемо ни одно направление.";
+  } else if (E.l2 < EPS) {
+    const ang = (Math.atan2(E.v2[1], E.v2[0]) * 180 / Math.PI + 180) % 180;
+    darkBox.className = "found";
+    darkBox.innerHTML = `⚠ Тёмное направление найдено: θ ≈ ${ang.toFixed(1)}° — вдоль него измерения не дают информации (λ_min &lt; ${EPS}).`;
+  } else {
+    darkBox.className = "";
+    darkBox.innerHTML = "✓ Тёмных направлений нет: все направления наблюдаемы (λ_min ≥ eps).";
+  }
+}
+
+// ============================== CANVAS ==============================
+
+const canvas = document.getElementById("cv");
+const ctx = canvas.getContext("2d");
+let W = 0, H = 0, CX = 0, CY = 0;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = rect.width; H = rect.height;
+  CX = W / 2; CY = H / 2;
+}
+window.addEventListener("resize", resize);
+resize();
+
+// мировые → экранные: y вверх на экране — это минус
+const wx = (x) => CX + x;
+const wy = (y) => CY - y;
+
+const ELLIPSE_SCALE = 90;   // px на единицу 1/sqrt(λ): при λ=1 полуось 90px
+const RAY_LEN = () => Math.min(W, H) * 0.42;
+const PROBE_LEN = () => Math.min(W, H) * 0.30;
+const HANDLE_R = 14;        // радиус захвата мышью
+
+// плавная анимация: отрисовываемые значения тянутся к целевым
+let drawnL1 = 1, drawnL2 = 1;
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function sensorTip(s) {
+  const L = RAY_LEN();
+  return [Math.cos(s.theta) * L, Math.sin(s.theta) * L];
+}
+function probeTip() {
+  const L = PROBE_LEN();
+  return [Math.cos(probeTheta) * L, Math.sin(probeTheta) * L];
+}
+
+// ---------- drag ----------
+let drag = null; // {type:"sensor", i} | {type:"probe"}
+
+function hitTest(mx, my) {
+  // mx,my — мировые координаты (центр = 0, y вверх)
+  const pt = probeTip();
+  if (Math.hypot(mx - pt[0], my - pt[1]) < HANDLE_R) return { type: "probe" };
+  for (let i = sensors.length - 1; i >= 0; i--) {
+    const t = sensorTip(sensors[i]);
+    if (Math.hypot(mx - t[0], my - t[1]) < HANDLE_R) return { type: "sensor", i };
+    // и противоположный конец прямой
+    if (Math.hypot(mx + t[0], my + t[1]) < HANDLE_R) return { type: "sensor", i };
+  }
+  return null;
+}
+
+function mouseWorld(e) {
+  const r = canvas.getBoundingClientRect();
+  return [e.clientX - r.left - CX, -(e.clientY - r.top - CY)];
+}
+
+canvas.addEventListener("mousedown", e => {
+  const [mx, my] = mouseWorld(e);
+  drag = hitTest(mx, my);
+});
+window.addEventListener("mousemove", e => {
+  const [mx, my] = mouseWorld(e);
+  if (drag) {
+    const ang = Math.atan2(my, mx);
+    if (drag.type === "probe") {
+      probeTheta = ang;
+    } else {
+      sensors[drag.i].theta = normSensorAngle(ang);
+      syncSliders(drag.i);
+    }
+  } else {
+    canvas.style.cursor = hitTest(mx, my) ? "grab" : "default";
+  }
+});
+window.addEventListener("mouseup", () => { drag = null; });
+
+// ---------- отрисовка ----------
+
+function drawArrowHead(x, y, ang, size, color) {
+  ctx.save();
+  ctx.translate(wx(x), wy(y));
+  ctx.rotate(-ang);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-size, size * 0.45);
+  ctx.lineTo(-size, -size * 0.45);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // лёгкая координатная сетка
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, CY); ctx.lineTo(W, CY);
+  ctx.moveTo(CX, 0); ctx.lineTo(CX, H);
+  ctx.stroke();
+
+  const M = infoMatrix();
+  const E = eig2x2(M);
+  const q = quadForm(M, probeTheta); // dᵀΛd
+
+  // плавное стремление к целевым собственным числам (для анимации эллипса)
+  drawnL1 = lerp(drawnL1, E.l1, 0.25);
+  drawnL2 = lerp(drawnL2, E.l2, 0.25);
+
+  // --- эллипс неопределённости из P = Λ⁻¹ ---
+  // полуоси вдоль собственных векторов Λ, длины ∝ 1/sqrt(λᵢ);
+  // λ < EPS → «тьма»: полуось уводим далеко за край canvas и ставим ∞
+  const FAR = Math.hypot(W, H);   // заведомо за краями
+  const axisLen = (l) => (l < EPS ? FAR : Math.min(FAR, ELLIPSE_SCALE / Math.sqrt(l)));
+  const A1 = axisLen(Math.max(drawnL1, E.l1 < EPS ? 0 : EPS)); // вдоль v1 (λ_max → короткая ось)
+  const A2 = axisLen(Math.max(drawnL2, E.l2 < EPS ? 0 : EPS)); // вдоль v2 (λ_min → длинная ось)
+  const ellipseAng = Math.atan2(E.v1[1], E.v1[0]);
+
+  ctx.save();
+  ctx.translate(wx(0), wy(0));
+  ctx.rotate(-ellipseAng);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, A1, A2, 0, 0, 2 * Math.PI);
+  ctx.fillStyle = "rgba(86,182,245,0.07)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(140,190,255,0.85)";
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  ctx.restore();
+
+  // --- собственные оси Λ: тонкий пунктир + подписи λ1, λ2 ---
+  const axes = [
+    { v: E.v1, l: E.l1, name: "λ1" },
+    { v: E.v2, l: E.l2, name: "λ2" },
+  ];
+  ctx.save();
+  ctx.setLineDash([5, 6]);
+  ctx.lineWidth = 1;
+  ctx.font = "12px Consolas, monospace";
+  for (const ax of axes) {
+    const L = Math.min(W, H) * 0.48;
+    ctx.strokeStyle = "rgba(215,221,232,0.35)";
+    ctx.beginPath();
+    ctx.moveTo(wx(-ax.v[0] * L), wy(-ax.v[1] * L));
+    ctx.lineTo(wx(ax.v[0] * L), wy(ax.v[1] * L));
+    ctx.stroke();
+    ctx.fillStyle = "rgba(215,221,232,0.6)";
+    const lx = wx(ax.v[0] * (L - 14)), ly = wy(ax.v[1] * (L - 14));
+    ctx.fillText(`${ax.name}=${fmt(ax.l)}`, lx + 6, ly - 6);
+  }
+  ctx.restore();
+
+  // метки ∞ на тёмных полуосях (вырожденная Λ — эллипс уходит за края)
+  ctx.font = "20px Consolas, monospace";
+  ctx.fillStyle = "rgba(255,107,107,0.9)";
+  if (E.l2 < EPS && E.l1 >= EPS) {
+    const L = Math.min(W, H) * 0.46;
+    ctx.fillText("∞", wx(E.v2[0] * L) - 6, wy(E.v2[1] * L) + 7);
+    ctx.fillText("∞", wx(-E.v2[0] * L) - 6, wy(-E.v2[1] * L) + 7);
+  } else if (E.l1 < EPS) {
+    ctx.fillText("∞", wx(0) + 14, wy(0) - 14); // Λ = 0: тьма по всем направлениям
+  }
+
+  // --- датчики: лучи из центра, толщина ∝ 1/R ---
+  sensors.forEach((s, i) => {
+    const t = sensorTip(s);
+    const w = Math.max(1.5, Math.min(12, 6 / s.R)); // толщина ∝ 1/R, в разумных пикселях
+    const col = SENSOR_COLORS[i];
+    ctx.strokeStyle = col;
+    ctx.lineWidth = w;
+    ctx.lineCap = "round";
+    // прямая измерения (обе стороны), противоположная — полупрозрачно
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.moveTo(wx(0), wy(0));
+    ctx.lineTo(wx(-t[0]), wy(-t[1]));
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(wx(0), wy(0));
+    ctx.lineTo(wx(t[0]), wy(t[1]));
+    ctx.stroke();
+    // ручка для drag
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(wx(t[0]), wy(t[1]), 6, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.font = "12px Consolas, monospace";
+    ctx.fillText(`θ${i + 1}=${Math.round(s.theta * 180 / Math.PI)}°`, wx(t[0]) + 10, wy(t[1]) + 4);
+  });
+
+  // --- пробное направление d: цвет — градиент яркий→серый по dᵀΛd ---
+  // t = (q − λ_min)/(λ_max − λ_min): 1 — светлое направление, 0 — тёмное
+  const span = E.l1 - E.l2;
+  const tq = span > EPS ? Math.max(0, Math.min(1, (q - E.l2) / span)) : (E.l1 < EPS ? 0 : 1);
+  const bright = [255, 210, 74], gray = [110, 115, 125];
+  const pc = bright.map((b, k) => Math.round(lerp(gray[k], b, tq)));
+  const probeColor = `rgb(${pc[0]},${pc[1]},${pc[2]})`;
+
+  const pt = probeTip();
+  ctx.strokeStyle = probeColor;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(wx(0), wy(0));
+  ctx.lineTo(wx(pt[0]), wy(pt[1]));
+  ctx.stroke();
+  drawArrowHead(pt[0], pt[1], probeTheta, 14, probeColor);
+  ctx.font = "600 14px Consolas, monospace";
+  ctx.fillStyle = probeColor;
+  ctx.fillText(`dᵀΛd = ${fmt(q)}`, wx(pt[0]) + 14, wy(pt[1]) - 10);
+
+  // --- состояние x = [p1, p2] в центре ---
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(wx(0), wy(0), 4, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.fillStyle = "rgba(215,221,232,0.7)";
+  ctx.font = "12px Consolas, monospace";
+  ctx.fillText("x = [p1, p2]", wx(0) + 8, wy(0) + 18);
+
+  updatePanel(M, E, q);
+  requestAnimationFrame(draw);
+}
+
+// ============================== СТАРТ ==============================
+
+applyPreset("ortho");
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
