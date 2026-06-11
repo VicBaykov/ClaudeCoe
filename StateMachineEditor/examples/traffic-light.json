@@ -1,0 +1,32 @@
+{
+  "name": "TrafficLight",
+  "initialState": "Red",
+  "states": [
+    {
+      "name": "Red",
+      "isFinal": false,
+      "onEnter": ["SetLamp(red)"],
+      "onExit": [],
+      "editor": { "x": 100, "y": 80 }
+    },
+    {
+      "name": "Green",
+      "isFinal": false,
+      "onEnter": ["SetLamp(green)"],
+      "onExit": [],
+      "editor": { "x": 420, "y": 80 }
+    },
+    {
+      "name": "Yellow",
+      "isFinal": false,
+      "onEnter": ["SetLamp(yellow)"],
+      "onExit": [],
+      "editor": { "x": 260, "y": 280 }
+    }
+  ],
+  "transitions": [
+    { "from": "Red", "to": "Green", "event": "timer", "condition": "", "priority": 0 },
+    { "from": "Green", "to": "Yellow", "event": "timer", "condition": "", "priority": 0 },
+    { "from": "Yellow", "to": "Red", "event": "timer", "condition": "", "priority": 0 }
+  ]
+}

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Редактор стейт-машин</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="toolbar">
+    <span id="logo">⬡ FSM</span>
+    <input id="machine-name" type="text" title="Имя стейт-машины" spellcheck="false">
+    <span class="spacer"></span>
+    <button id="btn-add-state" title="Добавить состояние (или двойной клик по холсту)">＋ Состояние</button>
+    <button id="btn-import" title="Загрузить JSON-файл">Импорт</button>
+    <button id="btn-export" title="Скачать JSON-файл">Экспорт JSON</button>
+    <button id="btn-copy" title="Скопировать JSON в буфер обмена">Копировать</button>
+    <button id="btn-clear" class="danger" title="Очистить редактор">Очистить</button>
+    <input id="file-input" type="file" accept=".json,application/json" hidden>
+  </header>
+
+  <main id="layout">
+    <div id="canvas">
+      <div id="world">
+        <svg id="edges"></svg>
+      </div>
+      <div id="hint">
+        двойной клик — новое состояние · перетащите порт ● на узел — переход ·
+        Del — удалить · колесо — масштаб · перетаскивание фона — панорама
+      </div>
+    </div>
+
+    <aside id="sidebar">
+      <section id="props">
+        <h2>Свойства</h2>
+        <div id="props-body"></div>
+      </section>
+      <section id="json-section">
+        <h2>JSON</h2>
+        <pre id="json-preview"></pre>
+      </section>
+    </aside>
+  </main>
+
+  <script src="editor.js"></script>
+</body>
+</html>
